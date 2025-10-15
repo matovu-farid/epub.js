@@ -1049,7 +1049,7 @@ class Rendition {
 
   /**
    * Get the text content of the currently viewed page (not the entire section/chapter)
-   * @returns {string|null} The text content of the current visible page, or null if no view is visible
+   * @returns {{text: string, startCfi: string, endCfi: string}|null} Object containing the text content and CFI boundaries of the current visible page, or null if no view is visible
    */
   getCurrentViewText() {
     if (!this.manager) {
@@ -1100,11 +1100,287 @@ class Rendition {
       range.setEnd(endRange.endContainer, endRange.endOffset);
 
       // Extract text from the range
-      return range.toString();
+      const text = range.toString();
+
+      return {
+        text: text,
+        startCfi: visibleSection.mapping.start,
+        endCfi: visibleSection.mapping.end,
+      };
     } catch (e) {
       console.error("Error extracting visible text:", e);
       return null;
     }
+  }
+
+  /**
+   * Get the paragraphs from the currently viewed page (not the entire section/chapter)
+   * @returns {Array<{text: string, cfi: string}>|null} Array of paragraph objects containing text content and CFI, or null if no view is visible
+   */
+  getCurrentViewParagraphs() {
+    if (!this.manager) {
+      return null;
+    }
+
+    // Get the current location which includes the visible range
+    const location = this.manager.currentLocation();
+
+    if (!location || !location.length || !location[0]) {
+      return null;
+    }
+
+    const visibleSection = location[0];
+
+    if (
+      !visibleSection.mapping ||
+      !visibleSection.mapping.start ||
+      !visibleSection.mapping.end
+    ) {
+      return null;
+    }
+
+    // Find the view for this section
+    const view = this.manager.views.find({ index: visibleSection.index });
+
+    if (!view || !view.contents || !view.contents.document) {
+      return null;
+    }
+
+    try {
+      // Create CFI ranges for the visible page
+      const startCfi = new EpubCFI(visibleSection.mapping.start);
+      const endCfi = new EpubCFI(visibleSection.mapping.end);
+
+      // Convert CFIs to DOM ranges
+      const startRange = startCfi.toRange(view.contents.document);
+      const endRange = endCfi.toRange(view.contents.document);
+
+      if (!startRange || !endRange) {
+        return null;
+      }
+
+      // Create a range that encompasses the visible content
+      const range = view.contents.document.createRange();
+      range.setStart(startRange.startContainer, startRange.startOffset);
+      range.setEnd(endRange.endContainer, endRange.endOffset);
+
+      // Extract paragraphs from the range
+      const paragraphs = this._getParagraphsFromRange(range, view.contents);
+
+      return paragraphs;
+    } catch (e) {
+      console.error("Error extracting paragraphs:", e);
+      return null;
+    }
+  }
+
+  /**
+   * Get block-level elements that intersect with the given range
+   * @param {Range} range - The DOM range to check against
+   * @param {Document} document - The document containing the range
+   * @returns {Array<Element>} Array of block elements that intersect with the range
+   * @private
+   */
+  _getBlockElementsInRange(range, document) {
+    const blockSelectors =
+      "p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre, article, section, aside, header, footer, main, nav, figure, figcaption, dd, dt";
+
+    // Get common ancestor of the range
+    const container = range.commonAncestorContainer;
+    const rootElement =
+      container.nodeType === Node.ELEMENT_NODE
+        ? container
+        : container.parentElement;
+
+    // Ensure we have a valid element to query
+    if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) {
+      return [];
+    }
+
+    // Cast to Element since we've verified it's an element node
+    const element = /** @type {Element} */ (rootElement);
+
+    // Get all block elements in the container
+    const allBlocks = Array.from(element.querySelectorAll(blockSelectors));
+
+    // Filter to only those that intersect with the visible range
+    const visibleBlocks = allBlocks.filter((element) => {
+      return range.intersectsNode(element);
+    });
+
+    return visibleBlocks;
+  }
+
+  /**
+   * Get paragraphs from a range by extracting text and splitting it logically
+   * @param {Range} range - The range that defines the visible area
+   * @param {Contents} contents - The contents object for CFI generation
+   * @returns {Array<{text: string, cfi: string}>} Array of paragraph objects
+   * @private
+   */
+  _getParagraphsFromRange(range, contents) {
+    const paragraphs = [];
+
+    try {
+      // Get the full text from the range (same as getCurrentViewText)
+      const fullText = range.toString();
+
+      if (!fullText.trim()) {
+        return [];
+      }
+
+      // Get the document from the range
+      const document = range.commonAncestorContainer.ownerDocument;
+      if (!document) {
+        return [];
+      }
+
+      // Find all text nodes within the range
+      const textNodes = this._getTextNodesInRange(range);
+
+      if (textNodes.length === 0) {
+        return [];
+      }
+
+      // Group text nodes by their containing block elements
+      const blockElementToTextNodes = new Map();
+
+      for (const textNode of textNodes) {
+        const blockElement = this._findContainingBlockElement(textNode);
+        if (blockElement) {
+          if (!blockElementToTextNodes.has(blockElement)) {
+            blockElementToTextNodes.set(blockElement, []);
+          }
+          blockElementToTextNodes.get(blockElement).push(textNode);
+        }
+      }
+
+      // Create paragraphs from grouped text nodes
+      for (const [blockElement, textNodes] of blockElementToTextNodes) {
+        try {
+          // Extract text from these specific text nodes
+          let elementText = "";
+
+          for (const textNode of textNodes) {
+            const nodeText = textNode.textContent || "";
+
+            // If this is the start node, trim from the beginning
+            if (textNode === range.startContainer) {
+              elementText += nodeText.substring(range.startOffset);
+            }
+            // If this is the end node, trim from the end
+            else if (textNode === range.endContainer) {
+              elementText += nodeText.substring(0, range.endOffset);
+            }
+            // Otherwise, include the full text
+            else {
+              elementText += nodeText;
+            }
+          }
+
+          // Clean up the text - normalize whitespace like getCurrentViewText
+          elementText = elementText.replace(/\s+/g, " ").trim();
+
+          // Skip empty paragraphs
+          if (!elementText) {
+            continue;
+          }
+
+          // Generate CFI for this element
+          const cfi = contents.cfiFromNode(blockElement);
+
+          paragraphs.push({
+            text: elementText,
+            cfi: cfi.toString(),
+          });
+          console.log(
+            `✅ Added paragraph: "${elementText.substring(0, 50)}..."`
+          );
+        } catch (e) {
+          console.error("❌ Error processing block element:", e);
+          continue;
+        }
+      }
+
+      return paragraphs;
+    } catch (e) {
+      console.error("Error getting paragraphs from range:", e);
+      return [];
+    }
+  }
+
+  /**
+   * Get all text nodes within a range
+   * @param {Range} range - The range to search
+   * @returns {Array<Text>} Array of text nodes
+   * @private
+   */
+  _getTextNodesInRange(range) {
+    const textNodes = [];
+
+    try {
+      const walker =
+        range.commonAncestorContainer.ownerDocument.createTreeWalker(
+          range.commonAncestorContainer,
+          NodeFilter.SHOW_TEXT,
+          {
+            acceptNode: function (node) {
+              try {
+                return range.intersectsNode(node)
+                  ? NodeFilter.FILTER_ACCEPT
+                  : NodeFilter.FILTER_REJECT;
+              } catch (e) {
+                return NodeFilter.FILTER_REJECT;
+              }
+            },
+          }
+        );
+
+      let node;
+      while ((node = walker.nextNode())) {
+        textNodes.push(node);
+      }
+    } catch (e) {
+      console.error("Error getting text nodes in range:", e);
+    }
+
+    return textNodes;
+  }
+
+  /**
+   * Find the containing block element for a text node
+   * @param {Text} textNode - The text node
+   * @returns {Element|null} The containing block element or null
+   * @private
+   */
+  _findContainingBlockElement(textNode) {
+    const blockSelectors =
+      "p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre, article, section, aside, header, footer, main, nav, figure, figcaption, dd, dt";
+
+    let element = textNode.parentElement;
+
+    while (element) {
+      try {
+        if (element.matches && element.matches(blockSelectors)) {
+          return element;
+        }
+      } catch (e) {
+        // Fallback for older browsers
+        const selectors = blockSelectors.split(", ");
+        for (const selector of selectors) {
+          try {
+            if (element.matches && element.matches(selector)) {
+              return element;
+            }
+          } catch (e2) {
+            continue;
+          }
+        }
+      }
+      element = element.parentElement;
+    }
+
+    return null;
   }
 
   /**
