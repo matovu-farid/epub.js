@@ -101,6 +101,14 @@ export default class Rendition {
 
   getRange(cfi: string, ignoreClass?: string): Range;
 
+  highlightElement(
+    cfi: string,
+    data?: object,
+    cb?: Function,
+    className?: string,
+    styles?: object
+  ): Promise<void>;
+
   handleLinks(contents: Contents): void;
 
   injectIdentifier(doc: Document, section: Section): void;
