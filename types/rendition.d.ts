@@ -91,7 +91,13 @@ export default class Rendition {
 
   getContents(): Contents;
 
-  getCurrentViewText(): string | null;
+  getCurrentViewText(): {
+    text: string;
+    startCfi: string;
+    endCfi: string;
+  } | null;
+
+  getCurrentViewParagraphs(): Array<{ text: string; cfi: string }> | null;
 
   getRange(cfi: string, ignoreClass?: string): Range;
 

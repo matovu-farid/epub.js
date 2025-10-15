@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Debug getCurrentViewParagraphs</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+      .epub-container {
+        width: 600px;
+        height: 400px;
+        border: 1px solid #ddd;
+        margin: 20px 0;
+      }
+      .controls {
+        margin: 20px 0;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+      }
+      .result {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 10px 0;
+        font-family: monospace;
+        white-space: pre-wrap;
+        max-height: 600px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🔍 Debug getCurrentViewParagraphs</h1>
+      <p>This test adds debugging to help identify where the method fails.</p>
+
+      <div class="controls">
+        <input type="file" id="epubFile" accept=".epub" />
+        <button onclick="loadEpub()" id="loadBtn">Load EPUB</button>
+        <button onclick="debugMethod()" id="debugBtn" disabled>Debug Method Step by Step</button>
+        <button onclick="clearResults()">Clear Results</button>
+      </div>
+
+      <div id="epub-container" class="epub-container"></div>
+      
+      <div id="output" class="result"></div>
+    </div>
+
+    <script src="dist/epub.min.js"></script>
+    <script>
+      let book = null;
+      let rendition = null;
+      const output = document.getElementById("output");
+
+      function log(message, type = "info") {
+        const timestamp = new Date().toLocaleTimeString();
+        const logMessage = `[${timestamp}] ${message}`;
+        console.log(logMessage);
+        
+        const outputDiv = document.getElementById("output");
+        outputDiv.textContent += logMessage + "\n";
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+      }
+
+      function clearResults() {
+        document.getElementById("output").textContent = "";
+      }
+
+      async function loadEpub() {
+        const fileInput = document.getElementById("epubFile");
+        const file = fileInput.files[0];
+        
+        if (!file) {
+          alert("Please select an EPUB file first");
+          return;
+        }
+
+        try {
+          log("🔍 Loading EPUB file: " + file.name);
+          
+          // Clean up previous book if exists
+          if (rendition) {
+            rendition.destroy();
+            rendition = null;
+          }
+          if (book) {
+            book = null;
+          }
+
+          // Clear the container
+          const container = document.getElementById("epub-container");
+          container.innerHTML = "";
+
+          // Create new book from file
+          book = new ePub(file);
+          
+          log("📚 Book created, waiting for ready...");
+          
+          // Wait for book to be ready
+          await book.ready;
+          log("✅ Book is ready!");
+
+          // Create rendition
+          rendition = book.renderTo("epub-container", {
+            width: "100%",
+            height: "100%",
+            flow: "paginated"
+          });
+
+          log("🎨 Rendition created, waiting for display...");
+
+          // Wait for rendition to be ready
+          await rendition.display();
+          log("✅ Rendition displayed!");
+
+          // Enable debug button
+          document.getElementById("debugBtn").disabled = false;
+
+          log("🎉 EPUB loaded successfully! Click 'Debug Method Step by Step' to test.");
+
+        } catch (error) {
+          log(`❌ Error loading EPUB: ${error.message}`);
+          console.error("Full error:", error);
+        }
+      }
+
+      function debugMethod() {
+        if (!rendition) {
+          log("❌ No rendition available. Please load an EPUB first.");
+          return;
+        }
+
+        log("🔍 Starting step-by-step debug of getCurrentViewParagraphs()...");
+        
+        try {
+          // Step 1: Check manager
+          log("Step 1: Checking manager...");
+          if (!rendition.manager) {
+            log("❌ No manager found - method would return null");
+            return;
+          }
+          log("✅ Manager exists");
+
+          // Step 2: Get current location
+          log("Step 2: Getting current location...");
+          const location = rendition.manager.currentLocation();
+          log(`📊 Location result: ${JSON.stringify(location, null, 2)}`);
+          
+          if (!location || !location.length || !location[0]) {
+            log("❌ No location data - method would return null");
+            return;
+          }
+          log("✅ Location data exists");
+
+          // Step 3: Check mapping
+          log("Step 3: Checking mapping data...");
+          const visibleSection = location[0];
+          log(`📊 Visible section: ${JSON.stringify(visibleSection, null, 2)}`);
+          
+          if (!visibleSection.mapping || !visibleSection.mapping.start || !visibleSection.mapping.end) {
+            log("❌ No mapping data - method would return null");
+            return;
+          }
+          log("✅ Mapping data exists");
+
+          // Step 4: Find view
+          log("Step 4: Finding view...");
+          const view = rendition.manager.views.find({ index: visibleSection.index });
+          log(`📊 View result: ${view ? 'found' : 'not found'}`);
+          
+          if (!view || !view.contents || !view.contents.document) {
+            log("❌ No view or contents - method would return null");
+            return;
+          }
+          log("✅ View and contents exist");
+
+          // Step 5: Test CFI creation
+          log("Step 5: Testing CFI creation...");
+          try {
+            const startCfi = new EpubCFI(visibleSection.mapping.start);
+            const endCfi = new EpubCFI(visibleSection.mapping.end);
+            log("✅ CFI objects created successfully");
+            
+            log(`📊 Start CFI: ${visibleSection.mapping.start}`);
+            log(`📊 End CFI: ${visibleSection.mapping.end}`);
+          } catch (cfiError) {
+            log(`❌ CFI creation failed: ${cfiError.message}`);
+            return;
+          }
+
+          // Step 6: Test range creation
+          log("Step 6: Testing DOM range creation...");
+          try {
+            const startCfi = new EpubCFI(visibleSection.mapping.start);
+            const endCfi = new EpubCFI(visibleSection.mapping.end);
+            
+            const startRange = startCfi.toRange(view.contents.document);
+            const endRange = endCfi.toRange(view.contents.document);
+            
+            if (!startRange || !endRange) {
+              log("❌ Could not create DOM ranges from CFIs");
+              return;
+            }
+            log("✅ DOM ranges created successfully");
+            
+            // Step 7: Test combined range
+            log("Step 7: Testing combined range...");
+            const range = view.contents.document.createRange();
+            range.setStart(startRange.startContainer, startRange.startOffset);
+            range.setEnd(endRange.endContainer, endRange.endOffset);
+            log("✅ Combined range created successfully");
+            
+            const rangeText = range.toString();
+            log(`📊 Range text length: ${rangeText.length}`);
+            log(`📊 Range text preview: "${rangeText.substring(0, 100)}${rangeText.length > 100 ? '...' : ''}"`);
+
+            // Step 8: Test paragraph extraction
+            log("Step 8: Testing paragraph extraction...");
+            const paragraphs = rendition._getParagraphsFromRange(range, view.contents);
+            
+            if (paragraphs && Array.isArray(paragraphs)) {
+              log(`✅ Paragraph extraction successful! Found ${paragraphs.length} paragraphs`);
+              
+              paragraphs.forEach((paragraph, index) => {
+                const preview = paragraph.text.substring(0, 50);
+                log(`📄 Paragraph ${index + 1}: "${preview}${paragraph.text.length > 50 ? '...' : ''}" (${paragraph.text.length} chars)`);
+                log(`🔗 CFI: ${paragraph.cfi}`);
+              });
+            } else {
+              log("❌ Paragraph extraction failed or returned unexpected result");
+            }
+
+          } catch (rangeError) {
+            log(`❌ Range creation failed: ${rangeError.message}`);
+            console.error("Range error details:", rangeError);
+            return;
+          }
+
+          // Step 9: Test full method
+          log("Step 9: Testing full getCurrentViewParagraphs method...");
+          const fullResult = rendition.getCurrentViewParagraphs();
+          
+          if (fullResult && Array.isArray(fullResult)) {
+            log(`✅ Full method SUCCESS! Returned ${fullResult.length} paragraphs`);
+          } else {
+            log(`❌ Full method failed: returned ${fullResult}`);
+          }
+
+        } catch (error) {
+          log(`❌ Debug failed with error: ${error.message}`);
+          console.error("Full error:", error);
+          console.error("Stack trace:", error.stack);
+        }
+      }
+
+      // Auto-focus file input
+      document.getElementById("epubFile").focus();
+    </script>
+  </body>
+</html>

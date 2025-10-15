@@ -53,15 +53,16 @@
   <body>
     <h1>Get Current View Text Example</h1>
     <p class="info">
-      This example demonstrates the <code>getCurrentViewText()</code> method
-      which extracts text from the <strong>current visible page</strong> (not
-      the entire chapter)
+      This example demonstrates the <code>getCurrentViewText()</code> and
+      <code>getCurrentViewParagraphs()</code> methods which extract text from
+      the <strong>current visible page</strong> (not the entire chapter)
     </p>
 
     <div id="controls">
       <button id="prev">Previous</button>
       <button id="next">Next</button>
       <button id="get-text">Get Current Text</button>
+      <button id="get-paragraphs">Get Paragraphs</button>
     </div>
 
     <div id="viewer"></div>
@@ -70,6 +71,13 @@
       <em
         >Click "Get Current Text" to see the text content of the currently
         viewed section...</em
+      >
+    </div>
+
+    <div id="paragraphs-output">
+      <em
+        >Click "Get Paragraphs" to see individual paragraphs from the current
+        visible page.</em
       >
     </div>
 
@@ -96,23 +104,63 @@
       document
         .getElementById("get-text")
         .addEventListener("click", function () {
-          var text = rendition.getCurrentViewText();
+          var result = rendition.getCurrentViewText();
           var output = document.getElementById("text-output");
 
-          if (text) {
+          if (result) {
             // Truncate for display if too long
             var displayText =
-              text.length > 1000
-                ? text.substring(0, 1000) +
+              result.text.length > 1000
+                ? result.text.substring(0, 1000) +
                   "\n\n... (truncated, " +
-                  text.length +
+                  result.text.length +
                   " total characters)"
-                : text;
+                : result.text;
 
-            output.textContent = displayText;
+            output.innerHTML =
+              "<strong>Text:</strong><br>" +
+              displayText.replace(/\n/g, "<br>") +
+              "<br><br><strong>Start CFI:</strong><br>" +
+              result.startCfi +
+              "<br><br><strong>End CFI:</strong><br>" +
+              result.endCfi;
           } else {
             output.innerHTML =
               '<em style="color: red;">No text content available. Make sure a section is displayed.</em>';
+          }
+        });
+
+      // Get current view paragraphs
+      document
+        .getElementById("get-paragraphs")
+        .addEventListener("click", function () {
+          var paragraphs = rendition.getCurrentViewParagraphs();
+          var output = document.getElementById("paragraphs-output");
+
+          if (paragraphs) {
+            var html = "<h3>Paragraphs (" + paragraphs.length + "):</h3>";
+            paragraphs.forEach(function (paragraph, index) {
+              var displayText =
+                paragraph.text.length > 200
+                  ? paragraph.text.substring(0, 200) + "..."
+                  : paragraph.text;
+
+              html +=
+                "<div style='margin-bottom: 15px; padding: 10px; border: 1px solid #ddd;'>";
+              html += "<strong>Paragraph " + (index + 1) + ":</strong><br>";
+              html += displayText.replace(/\n/g, "<br>");
+              html += "<br><br><strong>CFI:</strong><br>";
+              html +=
+                "<code style='font-size: 12px;'>" + paragraph.cfi + "</code>";
+              html += "</div>";
+            });
+
+            output.innerHTML = html;
+            output.style.display = "block";
+          } else {
+            output.innerHTML =
+              '<em style="color: red;">No paragraphs available. Make sure a section is displayed.</em>';
+            output.style.display = "block";
           }
         });
 

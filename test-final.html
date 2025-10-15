@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Final Test - getCurrentViewParagraphs()</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+      .controls {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        cursor: pointer;
+        margin: 0 10px;
+        font-size: 16px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .result {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 10px 0;
+        font-family: monospace;
+        white-space: pre-wrap;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+      .success {
+        border-left: 4px solid #28a745;
+        background: #d4edda;
+      }
+      .error {
+        border-left: 4px solid #dc3545;
+        background: #f8d7da;
+      }
+      .info {
+        border-left: 4px solid #17a2b8;
+        background: #d1ecf1;
+      }
+      .test-section {
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 10px 0;
+      }
+      .test-title {
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #333;
+      }
+      .status {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+      }
+      .status.pass {
+        background: #d4edda;
+        color: #155724;
+      }
+      .status.fail {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .status.skip {
+        background: #fff3cd;
+        color: #856404;
+      }
+      #viewer {
+        width: 100%;
+        height: 400px;
+        border: 1px solid #ddd;
+        margin: 20px 0;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 10px;
+        margin: 10px 0;
+      }
+      .stat {
+        background: #e9ecef;
+        padding: 10px;
+        border-radius: 4px;
+        text-align: center;
+      }
+      .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #007bff;
+      }
+      .stat-label {
+        font-size: 12px;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🧪 Final Test - getCurrentViewParagraphs() Method</h1>
+      <p>
+        This test verifies that the
+        <code>getCurrentViewParagraphs()</code> method works correctly and
+        returns paragraphs that combine to match the text from
+        <code>getCurrentViewText()</code>.
+      </p>
+
+      <div class="controls">
+        <button id="loadBtn">📚 Load Test EPUB</button>
+        <button id="testBtn" disabled>🧪 Run Tests</button>
+        <button id="navigateBtn" disabled>📖 Navigate Pages</button>
+      </div>
+
+      <div id="viewer"></div>
+
+      <div class="test-section">
+        <div class="test-title">📊 Test Results</div>
+        <div id="testResults"></div>
+      </div>
+
+      <div class="test-section">
+        <div class="test-title">📝 Current Text Output</div>
+        <div id="textOutput" class="result"></div>
+      </div>
+
+      <div class="test-section">
+        <div class="test-title">📄 Current Paragraphs Output</div>
+        <div id="paragraphsOutput" class="result"></div>
+      </div>
+
+      <div class="test-section">
+        <div class="test-title">🔍 Comparison Results</div>
+        <div id="comparisonOutput" class="result"></div>
+      </div>
+    </div>
+
+    <script src="dist/epub.min.js"></script>
+    <script>
+      let book = null;
+      let rendition = null;
+      let currentSection = 0;
+
+      const loadBtn = document.getElementById("loadBtn");
+      const testBtn = document.getElementById("testBtn");
+      const navigateBtn = document.getElementById("navigateBtn");
+      const testResults = document.getElementById("testResults");
+      const textOutput = document.getElementById("textOutput");
+      const paragraphsOutput = document.getElementById("paragraphsOutput");
+      const comparisonOutput = document.getElementById("comparisonOutput");
+
+      function log(message, type = "info") {
+        const timestamp = new Date().toLocaleTimeString();
+        const logMessage = `[${timestamp}] ${message}`;
+        console.log(logMessage);
+
+        const output = document.getElementById(`${type}Output`) || textOutput;
+        output.textContent += logMessage + "\n";
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function clearOutputs() {
+        textOutput.textContent = "";
+        paragraphsOutput.textContent = "";
+        comparisonOutput.textContent = "";
+        testResults.innerHTML = "";
+      }
+
+      function updateStats(stats) {
+        const statsHtml = `
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-value">${stats.textLength}</div>
+                        <div class="stat-label">Text Length</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">${stats.paragraphCount}</div>
+                        <div class="stat-label">Paragraphs</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">${
+                          stats.matches ? "✅" : "❌"
+                        }</div>
+                        <div class="stat-label">Text Matches</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">${
+                          stats.testPassed ? "✅" : "❌"
+                        }</div>
+                        <div class="stat-label">Test Status</div>
+                    </div>
+                </div>
+            `;
+        testResults.innerHTML = statsHtml;
+      }
+
+      function runTests() {
+        clearOutputs();
+
+        if (!rendition) {
+          log("❌ No rendition available. Please load an EPUB first.", "error");
+          return;
+        }
+
+        log("🧪 Running comprehensive tests...", "info");
+
+        try {
+          // Test 1: Check method existence
+          log("🔍 Test 1: Method existence check", "info");
+
+          if (typeof rendition.getCurrentViewText !== "function") {
+            log("❌ getCurrentViewText() method not found", "error");
+            return;
+          }
+          log("✅ getCurrentViewText() method exists", "info");
+
+          if (typeof rendition.getCurrentViewParagraphs !== "function") {
+            log("❌ getCurrentViewParagraphs() method not found", "error");
+            return;
+          }
+          log("✅ getCurrentViewParagraphs() method exists", "info");
+
+          // Test 2: Call methods
+          log("🔍 Test 2: Method execution", "info");
+
+          const textResult = rendition.getCurrentViewText();
+          log(
+            `📊 getCurrentViewText() result: ${
+              textResult ? "SUCCESS" : "NULL"
+            }`,
+            "info"
+          );
+
+          if (textResult) {
+            log(`📊 Text length: ${textResult.text.length} characters`, "info");
+            log(`📊 Start CFI: ${textResult.startCfi}`, "info");
+            log(`📊 End CFI: ${textResult.endCfi}`, "info");
+            log(
+              `📝 Text preview: "${textResult.text.substring(0, 100)}..."`,
+              "text"
+            );
+          }
+
+          const paragraphsResult = rendition.getCurrentViewParagraphs();
+          log(
+            `📊 getCurrentViewParagraphs() result: ${
+              paragraphsResult ? "SUCCESS" : "NULL"
+            }`,
+            "info"
+          );
+
+          if (paragraphsResult) {
+            log(`📊 Paragraph count: ${paragraphsResult.length}`, "info");
+
+            paragraphsResult.forEach((paragraph, index) => {
+              log(
+                `📝 Paragraph ${index + 1}: "${paragraph.text.substring(
+                  0,
+                  50
+                )}..."`,
+                "paragraphs"
+              );
+              log(`🔗 CFI: ${paragraph.cfi}`, "paragraphs");
+            });
+          }
+
+          // Test 3: Comparison
+          log("🔍 Test 3: Text comparison", "info");
+
+          if (textResult && paragraphsResult && paragraphsResult.length > 0) {
+            const combinedText = paragraphsResult.map((p) => p.text).join("");
+
+            // Normalize whitespace for comparison
+            const normalizedFullText = textResult.text
+              .replace(/\s+/g, " ")
+              .trim();
+            const normalizedCombinedText = combinedText
+              .replace(/\s+/g, " ")
+              .trim();
+
+            const matches = normalizedFullText === normalizedCombinedText;
+
+            log(
+              `📊 Full text length: ${normalizedFullText.length}`,
+              "comparison"
+            );
+            log(
+              `📊 Combined text length: ${normalizedCombinedText.length}`,
+              "comparison"
+            );
+            log(
+              `📊 Text matches: ${matches ? "✅ YES" : "❌ NO"}`,
+              "comparison"
+            );
+
+            if (!matches) {
+              log(
+                `📊 Difference: ${
+                  normalizedFullText.length - normalizedCombinedText.length
+                } characters`,
+                "comparison"
+              );
+
+              // Find first difference
+              const minLength = Math.min(
+                normalizedFullText.length,
+                normalizedCombinedText.length
+              );
+              for (let i = 0; i < minLength; i++) {
+                if (normalizedFullText[i] !== normalizedCombinedText[i]) {
+                  log(`🔍 First difference at position ${i}:`, "comparison");
+                  log(
+                    `📝 Full: "${normalizedFullText.substring(
+                      Math.max(0, i - 20),
+                      i + 20
+                    )}"`,
+                    "comparison"
+                  );
+                  log(
+                    `📝 Combined: "${normalizedCombinedText.substring(
+                      Math.max(0, i - 20),
+                      i + 20
+                    )}"`,
+                    "comparison"
+                  );
+                  break;
+                }
+              }
+            }
+
+            // Update stats
+            updateStats({
+              textLength: normalizedFullText.length,
+              paragraphCount: paragraphsResult.length,
+              matches: matches,
+              testPassed: matches,
+            });
+
+            if (matches) {
+              log(
+                "🎉 SUCCESS: All tests passed! Paragraphs combine to match full text exactly.",
+                "comparison"
+              );
+            } else {
+              log(
+                "❌ FAILURE: Paragraphs do not match full text.",
+                "comparison"
+              );
+            }
+          } else {
+            log(
+              "❌ Cannot compare: missing text or paragraph data",
+              "comparison"
+            );
+            updateStats({
+              textLength: textResult ? textResult.text.length : 0,
+              paragraphCount: paragraphsResult ? paragraphsResult.length : 0,
+              matches: false,
+              testPassed: false,
+            });
+          }
+        } catch (error) {
+          log(`💥 Test failed with error: ${error.message}`, "error");
+          log(`Stack trace: ${error.stack}`, "error");
+          updateStats({
+            textLength: 0,
+            paragraphCount: 0,
+            matches: false,
+            testPassed: false,
+          });
+        }
+      }
+
+      function navigatePages() {
+        if (!book || !rendition) {
+          log("❌ No book or rendition available", "error");
+          return;
+        }
+
+        currentSection = (currentSection + 1) % book.spine.length;
+        log(
+          `📖 Navigating to section ${currentSection + 1}/${book.spine.length}`,
+          "info"
+        );
+
+        rendition
+          .display(currentSection)
+          .then(() => {
+            log("✅ Navigation completed", "info");
+            setTimeout(runTests, 500); // Run tests after navigation settles
+          })
+          .catch((error) => {
+            log(`❌ Navigation failed: ${error.message}`, "error");
+          });
+      }
+
+      loadBtn.addEventListener("click", async () => {
+        try {
+          loadBtn.disabled = true;
+          loadBtn.textContent = "⏳ Loading...";
+
+          clearOutputs();
+          log("📚 Loading test EPUB...", "info");
+
+          // Try to load a test EPUB
+          const testEpubPath = "test/fixtures/alice.epub";
+          book = ePub(testEpubPath);
+
+          await book.ready;
+          log(`✅ EPUB loaded successfully: ${book.title}`, "info");
+          log(`📊 Spine sections: ${book.spine.length}`, "info");
+
+          rendition = book.renderTo("viewer", {
+            width: "100%",
+            height: "400px",
+            flow: "paginated",
+          });
+
+          await rendition.display();
+          log("✅ Rendition created and displayed", "info");
+
+          testBtn.disabled = false;
+          navigateBtn.disabled = false;
+          loadBtn.textContent = "✅ EPUB Loaded";
+
+          // Auto-run tests
+          setTimeout(runTests, 1000);
+        } catch (error) {
+          log(`❌ Failed to load EPUB: ${error.message}`, "error");
+          loadBtn.disabled = false;
+          loadBtn.textContent = "📚 Load Test EPUB";
+        }
+      });
+
+      testBtn.addEventListener("click", runTests);
+      navigateBtn.addEventListener("click", navigatePages);
+
+      // Initialize
+      log("🚀 Final test page loaded and ready", "info");
+      log('💡 Click "Load Test EPUB" to begin testing', "info");
+    </script>
+  </body>
+</html>
