@@ -22,7 +22,7 @@
     "productionLegacy": "NODE_ENV=production MINIMIZE=true LEGACY=true webpack --progress",
     "compile": "babel -d lib/ src/",
     "watch": "babel --watch -d lib/ src/",
-    "prepare": "npm run compile && npm run build && npm run minify && npm run legacy && npm run productionLegacy"
+    "prepare": "node -e \"process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --openssl-legacy-provider'; require('child_process').execSync('npm run compile && npm run build && npm run minify && npm run legacy && npm run productionLegacy', {stdio: 'inherit'})\""
   },
   "author": "fchasen@gmail.com",
   "license": "BSD-2-Clause",
