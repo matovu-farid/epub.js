@@ -91,6 +91,8 @@ export default class Rendition {
 
     getContents(): Contents;
 
+  getCurrentViewText(): string | null;
+
     getRange(cfi: string, ignoreClass?: string): Range;
 
     handleLinks(contents: Contents): void;
