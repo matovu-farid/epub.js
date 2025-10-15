@@ -1009,29 +1009,55 @@ class Rendition {
       return null;
     }
 
-    // Get the current view from the manager
-    const currentView = this.manager.current();
+    // Get the current location which includes the visible range
+    const location = this.manager.currentLocation();
 
     if (!currentView) {
       return null;
     }
 
-    // Get the section from the current view
-    const section = currentView.section;
+    // Get the first visible section's mapping which contains the CFI range
+    const visibleSection = location[0];
 
-    if (!section) {
+    if (
+      !visibleSection.mapping ||
+      !visibleSection.mapping.start ||
+      !visibleSection.mapping.end
+    ) {
       return null;
     }
 
     // Find the view for this section
-    const view = this.manager.views.find(section);
+    const view = this.manager.views.find({ index: visibleSection.index });
 
-    if (!view || !view.contents) {
+    if (!view || !view.contents || !view.contents.document) {
       return null;
     }
 
-    // Get the text content from the view's contents
-    return view.contents.content.textContent;
+    try {
+      // Create CFI ranges for the visible page
+      const startCfi = new EpubCFI(visibleSection.mapping.start);
+      const endCfi = new EpubCFI(visibleSection.mapping.end);
+
+      // Convert CFIs to DOM ranges
+      const startRange = startCfi.toRange(view.contents.document);
+      const endRange = endCfi.toRange(view.contents.document);
+
+      if (!startRange || !endRange) {
+        return null;
+      }
+
+      // Create a range that encompasses the visible content
+      const range = view.contents.document.createRange();
+      range.setStart(startRange.startContainer, startRange.startOffset);
+      range.setEnd(endRange.endContainer, endRange.endOffset);
+
+      // Extract text from the range
+      return range.toString();
+    } catch (e) {
+      console.error("Error extracting visible text:", e);
+      return null;
+    }
   }
 
 	/**
