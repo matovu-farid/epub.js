@@ -1117,7 +1117,7 @@ class Rendition {
    * Get the paragraphs from the currently viewed page (not the entire section/chapter)
    * @returns {Array<{text: string, cfi: string}>|null} Array of paragraph objects containing text content and CFI, or null if no view is visible
    */
-  getCurrentViewParagraphs() {
+  getCurrentViewParagraphs({ minLength = 50 }) {
     if (!this.manager) {
       return null;
     }
@@ -1166,49 +1166,23 @@ class Rendition {
 
       // Extract paragraphs from the range
       const paragraphs = this._getParagraphsFromRange(range, view.contents);
+      const mergedParagraphs = [paragraphs[0]];
 
-      return paragraphs;
+      // add smaller paragraphs to those below them
+      for (let i = 1; i < paragraphs.length; i++) {
+        if (paragraphs[i - 1].text.length < minLength) {
+          mergedParagraphs[mergedParagraphs.length - 1].text +=
+            paragraphs[i].text;
+        } else {
+          mergedParagraphs.push(paragraphs[i]);
+        }
+      }
+
+      return mergedParagraphs;
     } catch (e) {
       console.error("Error extracting paragraphs:", e);
       return null;
     }
-  }
-
-  /**
-   * Get block-level elements that intersect with the given range
-   * @param {Range} range - The DOM range to check against
-   * @param {Document} document - The document containing the range
-   * @returns {Array<Element>} Array of block elements that intersect with the range
-   * @private
-   */
-  _getBlockElementsInRange(range, document) {
-    const blockSelectors =
-      "p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre, article, section, aside, header, footer, main, nav, figure, figcaption, dd, dt";
-
-    // Get common ancestor of the range
-    const container = range.commonAncestorContainer;
-    const rootElement =
-      container.nodeType === Node.ELEMENT_NODE
-        ? container
-        : container.parentElement;
-
-    // Ensure we have a valid element to query
-    if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) {
-      return [];
-    }
-
-    // Cast to Element since we've verified it's an element node
-    const element = /** @type {Element} */ (rootElement);
-
-    // Get all block elements in the container
-    const allBlocks = Array.from(element.querySelectorAll(blockSelectors));
-
-    // Filter to only those that intersect with the visible range
-    const visibleBlocks = allBlocks.filter((element) => {
-      return range.intersectsNode(element);
-    });
-
-    return visibleBlocks;
   }
 
   /**
