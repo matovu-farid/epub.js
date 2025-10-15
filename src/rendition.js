@@ -979,6 +979,89 @@ class Rendition {
   }
 
   /**
+   * Highlight an element node based on a single CFI
+   * Converts the single CFI to a CFI range that covers the entire element
+   * @param {string} cfi EpubCFI string pointing to an element
+   * @param {object} [data={}] Data to assign to the highlight
+   * @param {function} [cb] Callback after highlight is clicked
+   * @param {string} [className="epubjs-hl"] CSS class to assign to the highlight
+   * @param {object} [styles={}] CSS styles to assign to the highlight
+   * @returns {Promise} Promise that resolves when highlight is applied
+   */
+  highlightElement(cfi, data = {}, cb, className = "epubjs-hl", styles = {}) {
+    if (!this.manager) {
+      return Promise.reject(new Error("Rendition manager not available"));
+    }
+
+    try {
+      // Parse the single CFI
+      const singleCfi = new EpubCFI(cfi);
+
+      // Find the view that contains this CFI
+      const found = this.manager.visible().filter(function (view) {
+        return singleCfi.spinePos === view.index;
+      });
+
+      if (!found.length) {
+        return Promise.reject(new Error("No view found for CFI: " + cfi));
+      }
+
+      const view = found[0];
+      if (!view.contents) {
+        return Promise.reject(new Error("View contents not available"));
+      }
+
+      // Convert CFI to DOM range to get the element
+      const range = singleCfi.toRange(
+        view.contents.document,
+        this.settings.ignoreClass
+      );
+      if (!range) {
+        return Promise.reject(new Error("Could not convert CFI to DOM range"));
+      }
+
+      let element;
+
+      // If the range points to a text node, get its parent element
+      if (range.startContainer.nodeType === Node.TEXT_NODE) {
+        element = range.startContainer.parentElement;
+      } else {
+        element = range.startContainer;
+      }
+
+      if (!element) {
+        return Promise.reject(new Error("Could not find element for CFI"));
+      }
+
+      // Create a new range that covers the entire element
+      const elementRange = view.contents.document.createRange();
+      elementRange.selectNode(element);
+
+      // Convert the element range to a CFI range
+      const cfiRange = view.contents.cfiFromRange(
+        elementRange,
+        this.settings.ignoreClass
+      );
+
+      // Use the existing highlight method with the CFI range
+      const annotation = this.annotations.highlight(
+        cfiRange,
+        data,
+        cb || (() => {}),
+        className,
+        styles
+      );
+
+      // Return a resolved promise since highlight is synchronous
+      return Promise.resolve(annotation);
+    } catch (error) {
+      return Promise.reject(
+        new Error("Error highlighting element: " + error.message)
+      );
+    }
+  }
+
+  /**
    * Hook to adjust images to fit in columns
    * @param  {Contents} contents
    * @private
