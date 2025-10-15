@@ -64,13 +64,24 @@ describe("Rendition - getCurrentViewParagraphs (Real EPUB)", function () {
           "Paragraph should have text property"
         );
         assert(
-          typeof paragraph.cfi === "string",
-          "Paragraph should have cfi property"
+          typeof paragraph.startCfi === "string",
+          "Paragraph should have startCfi property"
+        );
+        assert(
+          typeof paragraph.endCfi === "string",
+          "Paragraph should have endCfi property"
         );
         assert(paragraph.text.length > 0, "Paragraph text should not be empty");
-        assert(paragraph.cfi.length > 0, "Paragraph CFI should not be empty");
         assert(
-          paragraph.cfi.startsWith("epubcfi"),
+          paragraph.startCfi.length > 0,
+          "Paragraph startCfi should not be empty"
+        );
+        assert(
+          paragraph.endCfi.length > 0,
+          "Paragraph endCfi should not be empty"
+        );
+        assert(
+          paragraph.startCfi.startsWith("epubcfi"),
           "CFI should start with 'epubcfi'"
         );
       }
