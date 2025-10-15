@@ -1000,6 +1000,40 @@ class Rendition {
 		return views || [];
 	}
 
+  /**
+   * Get the text content of the currently viewed section
+   * @returns {string|null} The text content of the current view, or null if no view is visible
+   */
+  getCurrentViewText() {
+    if (!this.manager) {
+      return null;
+    }
+
+    // Get the current view from the manager
+    const currentView = this.manager.current();
+
+    if (!currentView) {
+      return null;
+    }
+
+    // Get the section from the current view
+    const section = currentView.section;
+
+    if (!section) {
+      return null;
+    }
+
+    // Find the view for this section
+    const view = this.manager.views.find(section);
+
+    if (!view || !view.contents) {
+      return null;
+    }
+
+    // Get the text content from the view's contents
+    return view.contents.content.textContent;
+  }
+
 	/**
 	 * Hook to handle link clicks in rendered content
 	 * @param  {Contents} contents
