@@ -985,7 +985,7 @@ class Rendition {
    * @param {object} [data={}] Data to assign to the highlight
    * @param {function} [cb] Callback after highlight is clicked
    * @param {string} [className="epubjs-hl"] CSS class to assign to the highlight
-   * @param {object} [styles={}] CSS styles to assign to the highlight
+   * @param {object} [styles={}] CSS styles to assign to the highlight (defaults to yellow highlight)
    * @returns {Promise} Promise that resolves when highlight is applied
    */
   highlightElement(cfi, data = {}, cb, className = "epubjs-hl", styles = {}) {
@@ -1043,13 +1043,21 @@ class Rendition {
         this.settings.ignoreClass
       );
 
+      // Apply default yellow highlight styles if no custom styles provided
+      const defaultStyles = {
+        fill: "yellow",
+        "fill-opacity": "0.3",
+        "mix-blend-mode": "multiply",
+      };
+      const mergedStyles = Object.assign(defaultStyles, styles);
+
       // Use the existing highlight method with the CFI range
       const annotation = this.annotations.highlight(
         cfiRange,
         data,
         cb || (() => {}),
         className,
-        styles
+        mergedStyles
       );
 
       // Return a resolved promise since highlight is synchronous
@@ -1340,9 +1348,6 @@ class Rendition {
             text: elementText,
             cfi: cfi.toString(),
           });
-          console.log(
-            `✅ Added paragraph: "${elementText.substring(0, 50)}..."`
-          );
         } catch (e) {
           console.error("❌ Error processing block element:", e);
           continue;

@@ -107,7 +107,7 @@ export default class Rendition {
     cb?: Function,
     className?: string,
     styles?: object
-  ): Promise<void>;
+  ): Promise<any>;
 
   handleLinks(contents: Contents): void;
 
