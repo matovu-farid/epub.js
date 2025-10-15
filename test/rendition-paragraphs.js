@@ -139,13 +139,17 @@ describe("Rendition - getCurrentViewParagraphs", function () {
       const paragraphsResult = rendition.getCurrentViewParagraphs();
 
       if (textResult && paragraphsResult && paragraphsResult.length > 0) {
-        // Combine all paragraph text
-        const combinedText = paragraphsResult.map((p) => p.text).join("");
+        // Combine all paragraph text with single spaces between paragraphs
+        // This simulates how the text would look when paragraphs are separated
+        const combinedText = paragraphsResult.map((p) => p.text).join(" ");
 
-        // Normalize whitespace for comparison
+        // Normalize whitespace for comparison - both should have the same content
+        // but getCurrentViewText may have different spacing due to DOM structure
         const normalizedFullText = textResult.text.replace(/\s+/g, " ").trim();
         const normalizedCombinedText = combinedText.replace(/\s+/g, " ").trim();
 
+        // The combined text should contain the same words/content as the full text
+        // We'll compare by checking if the normalized versions match
         assert.strictEqual(
           normalizedFullText,
           normalizedCombinedText,

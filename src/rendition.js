@@ -1117,7 +1117,8 @@ class Rendition {
    * Get the paragraphs from the currently viewed page (not the entire section/chapter)
    * @returns {Array<{text: string, cfi: string}>|null} Array of paragraph objects containing text content and CFI, or null if no view is visible
    */
-  getCurrentViewParagraphs({ minLength = 50 }) {
+  getCurrentViewParagraphs(options = {}) {
+    const { minLength = 50 } = options;
     if (!this.manager) {
       return null;
     }
@@ -1252,8 +1253,9 @@ class Rendition {
             }
           }
 
-          // Clean up the text - normalize whitespace like getCurrentViewText
-          elementText = elementText.replace(/\s+/g, " ").trim();
+          // Don't normalize whitespace here - preserve original spacing
+          // The normalization should happen at the test level for comparison
+          elementText = elementText.trim();
 
           // Skip empty paragraphs
           if (!elementText) {
