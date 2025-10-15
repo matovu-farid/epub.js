@@ -1167,19 +1167,7 @@ class Rendition {
 
       // Extract paragraphs from the range
       const paragraphs = this._getParagraphsFromRange(range, view.contents);
-      const mergedParagraphs = [paragraphs[0]];
-
-      // add smaller paragraphs to those below them
-      for (let i = 1; i < paragraphs.length; i++) {
-        if (paragraphs[i - 1].text.length < minLength) {
-          mergedParagraphs[mergedParagraphs.length - 1].text +=
-            "\n" + paragraphs[i].text;
-        } else {
-          mergedParagraphs.push(paragraphs[i]);
-        }
-      }
-
-      return mergedParagraphs;
+      return paragraphs;
     } catch (e) {
       console.error("Error extracting paragraphs:", e);
       return null;
