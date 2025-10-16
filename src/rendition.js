@@ -1319,24 +1319,33 @@ class Rendition {
   async getNextViewParagraphs(options = {}) {
     const { minLength = 50 } = options;
     if (!this.manager) {
-      return null;
+      console.log("getNextViewParagraphs: No manager");
+      return [];
     }
 
     // Get the current location which includes the visible range
     const location = this.manager.currentLocation();
 
     if (!location || !location.length || !location[0]) {
-      return null;
+      console.log("getNextViewParagraphs: No location data");
+      return [];
     }
 
     const currentSection = location[0];
+    console.log("getNextViewParagraphs: Current section", {
+      index: currentSection.index,
+      pages: currentSection.pages,
+      totalPages: currentSection.totalPages,
+      hasMapping: !!currentSection.mapping,
+    });
 
     if (
       !currentSection.mapping ||
       !currentSection.mapping.start ||
       !currentSection.mapping.end
     ) {
-      return null;
+      console.log("getNextViewParagraphs: No mapping data");
+      return [];
     }
 
     // Get the current view to access its section
@@ -1345,7 +1354,8 @@ class Rendition {
     });
 
     if (!currentView || !currentView.section || !currentView.contents) {
-      return null;
+      console.log("getNextViewParagraphs: No current view or contents");
+      return [];
     }
 
     // Check if there's a next page within the current section
@@ -1354,13 +1364,34 @@ class Rendition {
       currentSection
     );
 
+    console.log(
+      "getNextViewParagraphs: hasNextPageInSection =",
+      hasNextPageInSection
+    );
+
+    let paragraphs;
     if (hasNextPageInSection) {
       // Get paragraphs from the next page within the same section
-      return this._getNextPageParagraphsInSection(currentView, currentSection);
+      paragraphs = this._getNextPageParagraphsInSection(
+        currentView,
+        currentSection
+      );
     } else {
       // Get paragraphs from the first page of the next section
-      return this._getFirstPageParagraphsInNextSection(currentView);
+      paragraphs = await this._getFirstPageParagraphsInNextSection(currentView);
     }
+
+    // Apply minLength filter if specified
+    if (minLength > 0) {
+      paragraphs = paragraphs.filter((p) => p.text.length >= minLength);
+      console.log(
+        "getNextViewParagraphs: After minLength filter:",
+        paragraphs.length,
+        "paragraphs"
+      );
+    }
+
+    return paragraphs;
   }
 
   /**
@@ -1371,38 +1402,23 @@ class Rendition {
    * @private
    */
   _hasNextPageInCurrentSection(currentView, currentSection) {
-    if (!this.manager.isPaginated) {
-      // For continuous/scrolled mode, there's always more content in the section
-      return true;
+    // Use page numbers from location data
+    if (!currentSection.pages || !currentSection.totalPages) {
+      console.log("_hasNextPageInCurrentSection: No pages or totalPages data");
+      return false;
     }
 
-    const container = this.manager.container;
-    const layout = this.manager.layout;
-    const settings = this.manager.settings;
+    // Check if current page is less than total pages
+    const currentPage = currentSection.pages[currentSection.pages.length - 1];
+    const hasNext = currentPage < currentSection.totalPages;
 
-    if (
-      settings.axis === "horizontal" &&
-      (!settings.direction || settings.direction === "ltr")
-    ) {
-      // LTR horizontal pagination
-      const left = container.scrollLeft + container.offsetWidth + layout.delta;
-      return left <= container.scrollWidth;
-    } else if (settings.axis === "horizontal" && settings.direction === "rtl") {
-      // RTL horizontal pagination
-      if (settings.rtlScrollType === "default") {
-        return container.scrollLeft > 0;
-      } else {
-        const left = container.scrollLeft + layout.delta * -1;
-        return left > container.scrollWidth * -1;
-      }
-    } else if (settings.axis === "vertical") {
-      // Vertical pagination
-      const top = container.scrollTop + container.offsetHeight;
-      return top < container.scrollHeight;
-    }
+    console.log("_hasNextPageInCurrentSection:", {
+      currentPage,
+      totalPages: currentSection.totalPages,
+      hasNext,
+    });
 
-    // Default case - assume there's more content
-    return true;
+    return hasNext;
   }
 
   /**
@@ -1415,95 +1431,99 @@ class Rendition {
   _getNextPageParagraphsInSection(currentView, currentSection) {
     try {
       const layout = this.manager.layout;
-      const settings = this.manager.settings;
-      const container = this.manager.container.getBoundingClientRect();
+      const currentPage = currentSection.pages[currentSection.pages.length - 1];
 
-      // Calculate the next page's start and end offsets
-      let nextStart, nextEnd;
-      const currentEnd = this._getCurrentPageEndOffset(
-        currentSection,
-        container,
-        layout,
-        settings
+      console.log(
+        "_getNextPageParagraphsInSection: currentPage =",
+        currentPage
+      );
+      console.log(
+        "_getNextPageParagraphsInSection: layout.pageWidth =",
+        layout.pageWidth
       );
 
-      if (settings.axis === "horizontal") {
-        nextStart = currentEnd;
-        nextEnd = currentEnd + layout.pageWidth;
-      } else {
-        // Vertical pagination
-        nextStart = currentEnd;
-        nextEnd = currentEnd + layout.height;
-      }
+      // Calculate next page offset based on page numbers
+      const nextPageStart = currentPage * layout.pageWidth;
+      const nextPageEnd = nextPageStart + layout.pageWidth;
 
-      // Get the CFI mapping for the next page
+      console.log(
+        "_getNextPageParagraphsInSection: nextPageStart =",
+        nextPageStart
+      );
+      console.log(
+        "_getNextPageParagraphsInSection: nextPageEnd =",
+        nextPageEnd
+      );
+
+      // Get CFI mapping for next page
       const nextPageMapping = this.manager.mapping.page(
         currentView.contents,
         currentView.section.cfiBase,
-        nextStart,
-        nextEnd
+        nextPageStart,
+        nextPageEnd
+      );
+
+      console.log(
+        "_getNextPageParagraphsInSection: nextPageMapping =",
+        nextPageMapping
       );
 
       if (!nextPageMapping || !nextPageMapping.start || !nextPageMapping.end) {
-        return null;
+        console.log("_getNextPageParagraphsInSection: No valid mapping");
+        return [];
       }
 
-      // Convert CFIs to DOM ranges
+      // Convert CFIs to ranges and extract paragraphs
       const startCfi = new EpubCFI(nextPageMapping.start);
       const endCfi = new EpubCFI(nextPageMapping.end);
 
-      const startRange = startCfi.toRange(currentView.contents.document);
-      const endRange = endCfi.toRange(currentView.contents.document);
+      let startRange = startCfi.toRange(currentView.contents.document);
+      let endRange = endCfi.toRange(currentView.contents.document);
 
       if (!startRange || !endRange) {
-        return null;
+        console.log(
+          "_getNextPageParagraphsInSection: Could not convert CFI to ranges"
+        );
+        return [];
       }
 
-      // Create a range that encompasses the next page content
+      // Validate and fix CFI order if needed
+      try {
+        const comparison = startRange.compareBoundaryPoints(
+          Range.START_TO_START,
+          endRange
+        );
+        if (comparison > 0) {
+          console.warn(
+            "_getNextPageParagraphsInSection: Start CFI comes after end CFI, swapping..."
+          );
+          // Swap the ranges
+          const temp = startRange;
+          startRange = endRange;
+          endRange = temp;
+        }
+      } catch (e) {
+        console.error("Error comparing range boundaries:", e);
+      }
+
       const range = currentView.contents.document.createRange();
       range.setStart(startRange.startContainer, startRange.startOffset);
       range.setEnd(endRange.endContainer, endRange.endOffset);
 
-      // Extract paragraphs from the range
-      return this._getParagraphsFromRange(range, currentView.contents);
+      const paragraphs = this._getParagraphsFromRange(
+        range,
+        currentView.contents
+      );
+      console.log(
+        "_getNextPageParagraphsInSection: Found",
+        paragraphs.length,
+        "paragraphs"
+      );
+
+      return paragraphs;
     } catch (e) {
       console.error("Error extracting next page paragraphs:", e);
-      return null;
-    }
-  }
-
-  /**
-   * Get the end offset of the current page
-   * @param {Object} currentSection - The current section location data
-   * @param {DOMRect} container - Container bounds
-   * @param {Layout} layout - Layout object
-   * @param {Object} settings - Manager settings
-   * @returns {number} The end offset of the current page
-   * @private
-   */
-  _getCurrentPageEndOffset(currentSection, container, layout, settings) {
-    // Calculate the current page's end offset based on the current mapping
-    // This mirrors the logic from paginatedLocation() in the manager
-
-    let left = 0;
-    let used = 0;
-
-    if (settings.fullsize) {
-      left = window.scrollX;
-    }
-
-    let offset;
-    let pageWidth;
-
-    if (settings.direction === "rtl") {
-      offset = container.right - left;
-      pageWidth =
-        Math.min(Math.abs(offset - container.left), layout.width) - used;
-      return container.width - (container.right - offset) - used;
-    } else {
-      offset = container.left + left;
-      pageWidth = Math.min(container.right - offset, layout.width) - used;
-      return offset - container.left + used + pageWidth;
+      return [];
     }
   }
 
@@ -1517,7 +1537,10 @@ class Rendition {
     const nextSection = currentView.section.next();
 
     if (!nextSection) {
-      return null; // No next section available
+      console.log(
+        "_getFirstPageParagraphsInNextSection: No next section available"
+      );
+      return []; // No next section available
     }
 
     // Try to find if the next section is already loaded as a view
@@ -1527,20 +1550,26 @@ class Rendition {
       // The next section is not loaded as a view yet
       // Load the section content directly without creating a view
       try {
-        // Load the section content directly using the book's load method
-        const loadedContent = await nextSection.load(
-          this.book.load.bind(this.book)
+        console.log(
+          "_getFirstPageParagraphsInNextSection: Loading next section"
+        );
+        // Load the section content directly using the book's load method with timeout
+        const loadPromise = nextSection.load(this.book.load.bind(this.book));
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Section load timeout")), 10000)
         );
 
+        const loadedContent = await Promise.race([loadPromise, timeoutPromise]);
+
         if (!loadedContent || !loadedContent.document) {
-          return null;
+          return [];
         }
 
         const document = loadedContent.document;
         const body = document.body;
 
         if (!body) {
-          return null;
+          return [];
         }
 
         // Create a Contents object from the loaded section
@@ -1562,7 +1591,7 @@ class Rendition {
           !firstPageMapping.start ||
           !firstPageMapping.end
         ) {
-          return null;
+          return [];
         }
 
         // Convert CFIs to DOM ranges
@@ -1573,7 +1602,7 @@ class Rendition {
         const endRange = endCfi.toRange(document);
 
         if (!startRange || !endRange) {
-          return null;
+          return [];
         }
 
         // Create a range that encompasses the first page content
@@ -1582,19 +1611,28 @@ class Rendition {
         range.setEnd(endRange.endContainer, endRange.endOffset);
 
         // Extract paragraphs from the range
-        return this._getParagraphsFromRange(range, contents);
+        const paragraphs = this._getParagraphsFromRange(range, contents);
+        console.log(
+          "_getFirstPageParagraphsInNextSection: Found",
+          paragraphs.length,
+          "paragraphs in loaded section"
+        );
+        return paragraphs;
       } catch (e) {
         console.error("Error loading next section content:", e);
-        return null;
+        return [];
       }
     }
 
     // If the view is already loaded, use it
     if (!nextView.contents || !nextView.contents.document) {
-      return null;
+      return [];
     }
 
     try {
+      console.log(
+        "_getFirstPageParagraphsInNextSection: Using already loaded view"
+      );
       // Get the first page mapping instead of the entire section
       const firstPageMapping = this._getFirstPageMapping(
         nextView.contents,
@@ -1606,7 +1644,7 @@ class Rendition {
         !firstPageMapping.start ||
         !firstPageMapping.end
       ) {
-        return null;
+        return [];
       }
 
       // Convert CFIs to DOM ranges
@@ -1617,7 +1655,7 @@ class Rendition {
       const endRange = endCfi.toRange(nextView.contents.document);
 
       if (!startRange || !endRange) {
-        return null;
+        return [];
       }
 
       // Create a range that encompasses the first page content
@@ -1626,10 +1664,16 @@ class Rendition {
       range.setEnd(endRange.endContainer, endRange.endOffset);
 
       // Extract paragraphs from the range
-      return this._getParagraphsFromRange(range, nextView.contents);
+      const paragraphs = this._getParagraphsFromRange(range, nextView.contents);
+      console.log(
+        "_getFirstPageParagraphsInNextSection: Found",
+        paragraphs.length,
+        "paragraphs in existing view"
+      );
+      return paragraphs;
     } catch (e) {
       console.error("Error extracting paragraphs from next view:", e);
-      return null;
+      return [];
     }
   }
 
@@ -1669,21 +1713,34 @@ class Rendition {
     try {
       // Get the full text from the range (same as getCurrentViewText)
       const fullText = range.toString();
+      console.log(
+        "_getParagraphsFromRange: Starting extraction, text length:",
+        fullText.length,
+        "preview:",
+        fullText.substring(0, 100)
+      );
 
       if (!fullText.trim()) {
+        console.log("_getParagraphsFromRange: No text in range");
         return [];
       }
 
       // Get the document from the range
       const document = range.commonAncestorContainer.ownerDocument;
       if (!document) {
+        console.log("_getParagraphsFromRange: No document found");
         return [];
       }
 
       // Find all text nodes within the range
       const textNodes = this._getTextNodesInRange(range);
+      console.log(
+        "_getParagraphsFromRange: Found text nodes:",
+        textNodes.length
+      );
 
       if (textNodes.length === 0) {
+        console.log("_getParagraphsFromRange: No text nodes in range");
         return [];
       }
 
@@ -1699,6 +1756,11 @@ class Rendition {
           blockElementToTextNodes.get(blockElement).push(textNode);
         }
       }
+
+      console.log(
+        "_getParagraphsFromRange: Block elements found:",
+        blockElementToTextNodes.size
+      );
 
       // Create paragraphs from grouped text nodes
       for (const [blockElement, textNodes] of blockElementToTextNodes) {
@@ -1851,6 +1913,34 @@ class Rendition {
         }
       }
 
+      // Fallback: if no paragraphs found but we have text, create one paragraph from entire range
+      if (paragraphs.length === 0 && fullText.trim()) {
+        console.log(
+          "_getParagraphsFromRange: No block elements found, using fallback extraction"
+        );
+        try {
+          const cfi = new EpubCFI(
+            range,
+            contents.cfiBase,
+            this.settings.ignoreClass
+          );
+          const cfiString = cfi.toString();
+          paragraphs.push({
+            text: fullText.trim(),
+            cfiRange: cfiString,
+            startCfi: cfiString,
+            endCfi: cfiString,
+          });
+        } catch (e) {
+          console.error("Error creating fallback paragraph:", e);
+        }
+      }
+
+      console.log(
+        "_getParagraphsFromRange: Returning",
+        paragraphs.length,
+        "paragraphs"
+      );
       return paragraphs;
     } catch (e) {
       console.error("Error getting paragraphs from range:", e);
@@ -1868,6 +1958,12 @@ class Rendition {
     const textNodes = [];
 
     try {
+      // Validate range first
+      if (!range || !range.commonAncestorContainer) {
+        console.error("_getTextNodesInRange: Invalid range provided");
+        return textNodes;
+      }
+
       const walker =
         range.commonAncestorContainer.ownerDocument.createTreeWalker(
           range.commonAncestorContainer,
@@ -1875,6 +1971,10 @@ class Rendition {
           {
             acceptNode: function (node) {
               try {
+                // Skip empty or whitespace-only text nodes
+                if (!node.textContent || !node.textContent.trim()) {
+                  return NodeFilter.FILTER_REJECT;
+                }
                 return range.intersectsNode(node)
                   ? NodeFilter.FILTER_ACCEPT
                   : NodeFilter.FILTER_REJECT;
