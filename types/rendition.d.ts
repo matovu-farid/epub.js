@@ -117,6 +117,8 @@ export default class Rendition {
     styles?: object
   ): Promise<any>;
 
+  removeHighlight(cfiRange: string): Promise<boolean>;
+
   handleLinks(contents: Contents): void;
 
   injectIdentifier(doc: Document, section: Section): void;

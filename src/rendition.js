@@ -1137,8 +1137,9 @@ class Rendition {
       const mergedStyles = Object.assign(defaultStyles, styles);
 
       // Use the existing highlight method with the CFI range
+      // Note: annotations.highlight expects a string despite TypeScript definitions saying EpubCFI
       const annotation = this.annotations.highlight(
-        cfiRange,
+        /** @type {any} */ (cfiRange),
         data,
         cb || (() => {}),
         className,
@@ -1150,6 +1151,58 @@ class Rendition {
     } catch (error) {
       return Promise.reject(
         new Error("Error highlighting range: " + error.message)
+      );
+    }
+  }
+
+  /**
+   * Remove a highlight from a CFI range
+   * @param {string} cfiRange - CFI range string to remove highlight from
+   * @returns {Promise<boolean>} Promise that resolves to true if highlight was removed, false if not found
+   */
+  removeHighlight(cfiRange) {
+    if (!this.manager) {
+      return Promise.reject(new Error("Rendition manager not available"));
+    }
+
+    try {
+      // Parse the CFI range to validate it
+      const rangeCfi = new EpubCFI(cfiRange);
+
+      // Check if this is a range CFI (should have start and end)
+      if (!rangeCfi.range) {
+        return Promise.reject(
+          new Error("CFI string is not a range: " + cfiRange)
+        );
+      }
+
+      // Find the view that contains this CFI range
+      const found = this.manager.visible().filter(function (view) {
+        return rangeCfi.spinePos === view.index;
+      });
+
+      if (!found.length) {
+        // If no view is found, the highlight might still exist in the store
+        // but not be visible, so we can still try to remove it
+        console.warn(
+          "No visible view found for CFI range, attempting to remove from store: " +
+            cfiRange
+        );
+      }
+
+      // Check if the annotation exists before removal
+      const hash = encodeURI(cfiRange + "highlight");
+      const annotationExists = hash in this.annotations._annotations;
+
+      // Remove the highlight annotation
+      // Note: annotations.remove expects a string despite TypeScript definitions saying EpubCFI
+      this.annotations.remove(/** @type {any} */ (cfiRange), "highlight");
+
+      // Return a resolved promise with the result
+      return Promise.resolve(annotationExists);
+    } catch (error) {
+      return Promise.reject(
+        new Error("Error removing highlight: " + error.message)
       );
     }
   }
