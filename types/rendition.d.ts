@@ -99,7 +99,7 @@ export default class Rendition {
 
   getCurrentViewParagraphs(): Array<{ text: string; cfiRange: string }> | null;
 
-  getNextViewParagraphs(): Array<{ text: string; cfiRange: string }> | null;
+  getNextViewParagraphs(): Promise<Array<{ text: string; cfiRange: string }> | null>;
 
   getRange(cfi: string, ignoreClass?: string): Range;
 

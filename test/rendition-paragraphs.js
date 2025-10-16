@@ -111,11 +111,14 @@ describe("Rendition - getCurrentViewParagraphs", function () {
           "Paragraph should have text property"
         );
         assert(
-          typeof paragraph.cfi === "string",
-          "Paragraph should have cfi property"
+          typeof paragraph.cfiRange === "string",
+          "Paragraph should have cfiRange property"
         );
         assert(paragraph.text.length > 0, "Paragraph text should not be empty");
-        assert(paragraph.cfi.length > 0, "Paragraph CFI should not be empty");
+        assert(
+          paragraph.cfiRange.length > 0,
+          "Paragraph CFI range should not be empty"
+        );
       }
     });
 
@@ -171,35 +174,40 @@ describe("Rendition - getCurrentViewParagraphs", function () {
     });
   });
 
-  describe("CFI Generation", function () {
-    it("should generate valid CFI for each paragraph", function () {
+  describe("CFI Range Generation", function () {
+    it("should generate valid CFI ranges for each paragraph", function () {
       const paragraphs = rendition.getCurrentViewParagraphs();
 
       if (paragraphs && paragraphs.length > 0) {
         paragraphs.forEach((paragraph, index) => {
           assert(
-            paragraph.cfi.startsWith("epubcfi"),
-            `Paragraph ${index} CFI should start with 'epubcfi'`
+            paragraph.cfiRange.startsWith("epubcfi"),
+            `Paragraph ${index} CFI range should start with 'epubcfi'`
           );
           assert(
-            paragraph.cfi.includes("!/"),
-            `Paragraph ${index} CFI should contain '!/'`
+            paragraph.cfiRange.includes("!/"),
+            `Paragraph ${index} CFI range should contain '!/'`
+          );
+          // CFI ranges should contain both start and end positions
+          assert(
+            paragraph.cfiRange.includes(","),
+            `Paragraph ${index} CFI range should be a range (contain comma)`
           );
         });
       }
     });
 
-    it("should have unique CFIs for different paragraphs", function () {
+    it("should have unique CFI ranges for different paragraphs", function () {
       const paragraphs = rendition.getCurrentViewParagraphs();
 
       if (paragraphs && paragraphs.length > 1) {
-        const cfis = paragraphs.map((p) => p.cfi);
-        const uniqueCfis = [...new Set(cfis)];
+        const cfiRanges = paragraphs.map((p) => p.cfiRange);
+        const uniqueCfiRanges = [...new Set(cfiRanges)];
 
         assert.strictEqual(
-          cfis.length,
-          uniqueCfis.length,
-          "All paragraph CFIs should be unique"
+          cfiRanges.length,
+          uniqueCfiRanges.length,
+          "All paragraph CFI ranges should be unique"
         );
       }
     });

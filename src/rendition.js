@@ -1405,9 +1405,9 @@ class Rendition {
 
   /**
    * Get the paragraphs from the next view/page (not the currently visible one)
-   * @returns {Array<{text: string, cfiRange: string}>|null} Array of paragraph objects containing text content and CFI range, or null if no next view exists
+   * @returns {Promise<Array<{text: string, cfiRange: string}>|null>} Promise that resolves to array of paragraph objects containing text content and CFI range, or null if no next view exists
    */
-  getNextViewParagraphs(options = {}) {
+  async getNextViewParagraphs(options = {}) {
     const { minLength = 50 } = options;
     if (!this.manager) {
       return null;
@@ -1443,10 +1443,46 @@ class Rendition {
 
     if (!nextView) {
       // The next section is not loaded as a view yet
-      // We need to load it to get paragraphs
-      return null; // Cannot get paragraphs from unloaded section
+      // Load the section content directly without creating a view
+      try {
+        // Load the section content directly using the book's load method
+        const loadedContent = await nextSection.load(
+          this.book.load.bind(this.book)
+        );
+
+        if (!loadedContent || !loadedContent.document) {
+          return null;
+        }
+
+        const document = loadedContent.document;
+        const body = document.body;
+
+        if (!body) {
+          return null;
+        }
+
+        // Create a Contents object from the loaded section
+        const contents = new Contents(
+          document,
+          body,
+          nextSection.cfiBase,
+          nextSection.index
+        );
+
+        // Create a range that covers the entire document body
+        const range = document.createRange();
+        range.selectNodeContents(body);
+
+        // Extract paragraphs from the range
+        const paragraphs = this._getParagraphsFromRange(range, contents);
+        return paragraphs;
+      } catch (e) {
+        console.error("Error loading next section content:", e);
+        return null;
+      }
     }
 
+    // If the view is already loaded, use it
     if (!nextView.contents || !nextView.contents.document) {
       return null;
     }
