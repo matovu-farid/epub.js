@@ -1322,7 +1322,7 @@ class Rendition {
       return null;
     }
 
-    // Get the current location to find the current section
+    // Get the current location which includes the visible range
     const location = this.manager.currentLocation();
 
     if (!location || !location.length || !location[0]) {
@@ -1331,16 +1331,189 @@ class Rendition {
 
     const currentSection = location[0];
 
+    if (
+      !currentSection.mapping ||
+      !currentSection.mapping.start ||
+      !currentSection.mapping.end
+    ) {
+      return null;
+    }
+
     // Get the current view to access its section
     const currentView = this.manager.views.find({
       index: currentSection.index,
     });
 
-    if (!currentView || !currentView.section) {
+    if (!currentView || !currentView.section || !currentView.contents) {
       return null;
     }
 
-    // Get the next section
+    // Check if there's a next page within the current section
+    const hasNextPageInSection = this._hasNextPageInCurrentSection(
+      currentView,
+      currentSection
+    );
+
+    if (hasNextPageInSection) {
+      // Get paragraphs from the next page within the same section
+      return this._getNextPageParagraphsInSection(currentView, currentSection);
+    } else {
+      // Get paragraphs from the first page of the next section
+      return this._getFirstPageParagraphsInNextSection(currentView);
+    }
+  }
+
+  /**
+   * Check if there's a next page within the current section
+   * @param {View} currentView - The current view
+   * @param {Object} currentSection - The current section location data
+   * @returns {boolean} True if there's a next page in the current section
+   * @private
+   */
+  _hasNextPageInCurrentSection(currentView, currentSection) {
+    if (!this.manager.isPaginated) {
+      // For continuous/scrolled mode, there's always more content in the section
+      return true;
+    }
+
+    const container = this.manager.container;
+    const layout = this.manager.layout;
+    const settings = this.manager.settings;
+
+    if (
+      settings.axis === "horizontal" &&
+      (!settings.direction || settings.direction === "ltr")
+    ) {
+      // LTR horizontal pagination
+      const left = container.scrollLeft + container.offsetWidth + layout.delta;
+      return left <= container.scrollWidth;
+    } else if (settings.axis === "horizontal" && settings.direction === "rtl") {
+      // RTL horizontal pagination
+      if (settings.rtlScrollType === "default") {
+        return container.scrollLeft > 0;
+      } else {
+        const left = container.scrollLeft + layout.delta * -1;
+        return left > container.scrollWidth * -1;
+      }
+    } else if (settings.axis === "vertical") {
+      // Vertical pagination
+      const top = container.scrollTop + container.offsetHeight;
+      return top < container.scrollHeight;
+    }
+
+    // Default case - assume there's more content
+    return true;
+  }
+
+  /**
+   * Get paragraphs from the next page within the current section
+   * @param {View} currentView - The current view
+   * @param {Object} currentSection - The current section location data
+   * @returns {Array<{text: string, cfiRange: string}>|null} Array of paragraph objects
+   * @private
+   */
+  _getNextPageParagraphsInSection(currentView, currentSection) {
+    try {
+      const layout = this.manager.layout;
+      const settings = this.manager.settings;
+      const container = this.manager.container.getBoundingClientRect();
+
+      // Calculate the next page's start and end offsets
+      let nextStart, nextEnd;
+      const currentEnd = this._getCurrentPageEndOffset(
+        currentSection,
+        container,
+        layout,
+        settings
+      );
+
+      if (settings.axis === "horizontal") {
+        nextStart = currentEnd;
+        nextEnd = currentEnd + layout.pageWidth;
+      } else {
+        // Vertical pagination
+        nextStart = currentEnd;
+        nextEnd = currentEnd + layout.height;
+      }
+
+      // Get the CFI mapping for the next page
+      const nextPageMapping = this.manager.mapping.page(
+        currentView.contents,
+        currentView.section.cfiBase,
+        nextStart,
+        nextEnd
+      );
+
+      if (!nextPageMapping || !nextPageMapping.start || !nextPageMapping.end) {
+        return null;
+      }
+
+      // Convert CFIs to DOM ranges
+      const startCfi = new EpubCFI(nextPageMapping.start);
+      const endCfi = new EpubCFI(nextPageMapping.end);
+
+      const startRange = startCfi.toRange(currentView.contents.document);
+      const endRange = endCfi.toRange(currentView.contents.document);
+
+      if (!startRange || !endRange) {
+        return null;
+      }
+
+      // Create a range that encompasses the next page content
+      const range = currentView.contents.document.createRange();
+      range.setStart(startRange.startContainer, startRange.startOffset);
+      range.setEnd(endRange.endContainer, endRange.endOffset);
+
+      // Extract paragraphs from the range
+      return this._getParagraphsFromRange(range, currentView.contents);
+    } catch (e) {
+      console.error("Error extracting next page paragraphs:", e);
+      return null;
+    }
+  }
+
+  /**
+   * Get the end offset of the current page
+   * @param {Object} currentSection - The current section location data
+   * @param {DOMRect} container - Container bounds
+   * @param {Layout} layout - Layout object
+   * @param {Object} settings - Manager settings
+   * @returns {number} The end offset of the current page
+   * @private
+   */
+  _getCurrentPageEndOffset(currentSection, container, layout, settings) {
+    // Calculate the current page's end offset based on the current mapping
+    // This mirrors the logic from paginatedLocation() in the manager
+
+    let left = 0;
+    let used = 0;
+
+    if (settings.fullsize) {
+      left = window.scrollX;
+    }
+
+    let offset;
+    let pageWidth;
+
+    if (settings.direction === "rtl") {
+      offset = container.right - left;
+      pageWidth =
+        Math.min(Math.abs(offset - container.left), layout.width) - used;
+      return container.width - (container.right - offset) - used;
+    } else {
+      offset = container.left + left;
+      pageWidth = Math.min(container.right - offset, layout.width) - used;
+      return offset - container.left + used + pageWidth;
+    }
+  }
+
+  /**
+   * Get paragraphs from the first page of the next section
+   * @param {View} currentView - The current view
+   * @returns {Promise<Array<{text: string, cfiRange: string}>|null>} Promise that resolves to array of paragraph objects
+   * @private
+   */
+  async _getFirstPageParagraphsInNextSection(currentView) {
     const nextSection = currentView.section.next();
 
     if (!nextSection) {
@@ -1378,13 +1551,38 @@ class Rendition {
           nextSection.index
         );
 
-        // Create a range that covers the entire document body
+        // Get the first page mapping instead of the entire section
+        const firstPageMapping = this._getFirstPageMapping(
+          contents,
+          nextSection
+        );
+
+        if (
+          !firstPageMapping ||
+          !firstPageMapping.start ||
+          !firstPageMapping.end
+        ) {
+          return null;
+        }
+
+        // Convert CFIs to DOM ranges
+        const startCfi = new EpubCFI(firstPageMapping.start);
+        const endCfi = new EpubCFI(firstPageMapping.end);
+
+        const startRange = startCfi.toRange(document);
+        const endRange = endCfi.toRange(document);
+
+        if (!startRange || !endRange) {
+          return null;
+        }
+
+        // Create a range that encompasses the first page content
         const range = document.createRange();
-        range.selectNodeContents(body);
+        range.setStart(startRange.startContainer, startRange.startOffset);
+        range.setEnd(endRange.endContainer, endRange.endOffset);
 
         // Extract paragraphs from the range
-        const paragraphs = this._getParagraphsFromRange(range, contents);
-        return paragraphs;
+        return this._getParagraphsFromRange(range, contents);
       } catch (e) {
         console.error("Error loading next section content:", e);
         return null;
@@ -1397,26 +1595,65 @@ class Rendition {
     }
 
     try {
-      // For the next view, we'll get paragraphs from the entire section
-      // since we don't have specific visible range mapping for unloaded views
-      const document = nextView.contents.document;
-      const body = document.body;
+      // Get the first page mapping instead of the entire section
+      const firstPageMapping = this._getFirstPageMapping(
+        nextView.contents,
+        nextView.section
+      );
 
-      if (!body) {
+      if (
+        !firstPageMapping ||
+        !firstPageMapping.start ||
+        !firstPageMapping.end
+      ) {
         return null;
       }
 
-      // Create a range that covers the entire document body
-      const range = document.createRange();
-      range.selectNodeContents(body);
+      // Convert CFIs to DOM ranges
+      const startCfi = new EpubCFI(firstPageMapping.start);
+      const endCfi = new EpubCFI(firstPageMapping.end);
+
+      const startRange = startCfi.toRange(nextView.contents.document);
+      const endRange = endCfi.toRange(nextView.contents.document);
+
+      if (!startRange || !endRange) {
+        return null;
+      }
+
+      // Create a range that encompasses the first page content
+      const range = nextView.contents.document.createRange();
+      range.setStart(startRange.startContainer, startRange.startOffset);
+      range.setEnd(endRange.endContainer, endRange.endOffset);
 
       // Extract paragraphs from the range
-      const paragraphs = this._getParagraphsFromRange(range, nextView.contents);
-      return paragraphs;
+      return this._getParagraphsFromRange(range, nextView.contents);
     } catch (e) {
       console.error("Error extracting paragraphs from next view:", e);
       return null;
     }
+  }
+
+  /**
+   * Get the CFI mapping for the first page of a section
+   * @param {Contents} contents - The contents object
+   * @param {Section} section - The section object
+   * @returns {Object|null} The CFI mapping for the first page
+   * @private
+   */
+  _getFirstPageMapping(contents, section) {
+    const layout = this.manager.layout;
+
+    // For the first page, start at 0 and use page width/height
+    let start = 0;
+    let end;
+
+    if (this.manager.settings.axis === "horizontal") {
+      end = layout.pageWidth;
+    } else {
+      end = layout.height;
+    }
+
+    return this.manager.mapping.page(contents, section.cfiBase, start, end);
   }
 
   /**
