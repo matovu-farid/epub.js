@@ -1404,6 +1404,77 @@ class Rendition {
   }
 
   /**
+   * Get the paragraphs from the next view/page (not the currently visible one)
+   * @returns {Array<{text: string, cfiRange: string}>|null} Array of paragraph objects containing text content and CFI range, or null if no next view exists
+   */
+  getNextViewParagraphs(options = {}) {
+    const { minLength = 50 } = options;
+    if (!this.manager) {
+      return null;
+    }
+
+    // Get the current location to find the current section
+    const location = this.manager.currentLocation();
+
+    if (!location || !location.length || !location[0]) {
+      return null;
+    }
+
+    const currentSection = location[0];
+
+    // Get the current view to access its section
+    const currentView = this.manager.views.find({
+      index: currentSection.index,
+    });
+
+    if (!currentView || !currentView.section) {
+      return null;
+    }
+
+    // Get the next section
+    const nextSection = currentView.section.next();
+
+    if (!nextSection) {
+      return null; // No next section available
+    }
+
+    // Try to find if the next section is already loaded as a view
+    let nextView = this.manager.views.find({ index: nextSection.index });
+
+    if (!nextView) {
+      // The next section is not loaded as a view yet
+      // We need to load it to get paragraphs
+      return null; // Cannot get paragraphs from unloaded section
+    }
+
+    if (!nextView.contents || !nextView.contents.document) {
+      return null;
+    }
+
+    try {
+      // For the next view, we'll get paragraphs from the entire section
+      // since we don't have specific visible range mapping for unloaded views
+      const document = nextView.contents.document;
+      const body = document.body;
+
+      if (!body) {
+        return null;
+      }
+
+      // Create a range that covers the entire document body
+      const range = document.createRange();
+      range.selectNodeContents(body);
+
+      // Extract paragraphs from the range
+      const paragraphs = this._getParagraphsFromRange(range, nextView.contents);
+      return paragraphs;
+    } catch (e) {
+      console.error("Error extracting paragraphs from next view:", e);
+      return null;
+    }
+  }
+
+  /**
    * Get paragraphs from a range by extracting text and splitting it logically
    * @param {Range} range - The range that defines the visible area
    * @param {Contents} contents - The contents object for CFI generation
