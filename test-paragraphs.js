@@ -175,7 +175,7 @@ async function runTest() {
             `📝 Paragraph ${index + 1}:`,
             paragraph.text.substring(0, 50) + "..."
           );
-          console.log(`🔗 CFI:`, paragraph.cfi);
+          console.log(`🔗 CFI Range:`, paragraph.cfiRange);
         });
 
         // Test if combined paragraphs match full text

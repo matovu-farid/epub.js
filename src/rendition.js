@@ -1070,6 +1070,91 @@ class Rendition {
   }
 
   /**
+   * Highlight a CFI range with default styles
+   * @param {string} cfiRange - CFI range string to highlight
+   * @param {object} data - Data to assign to the annotation
+   * @param {function} cb - Callback function when annotation is clicked
+   * @param {string} className - CSS class name for the highlight
+   * @param {object} styles - Custom CSS styles to apply
+   * @returns {Promise<any>} Promise that resolves to the created annotation
+   */
+  highlightRange(
+    cfiRange,
+    data = {},
+    cb,
+    className = "epubjs-hl",
+    styles = {}
+  ) {
+    if (!this.manager) {
+      return Promise.reject(new Error("Rendition manager not available"));
+    }
+
+    try {
+      // Parse the CFI range to validate it
+      const rangeCfi = new EpubCFI(cfiRange);
+
+      // Check if this is a range CFI (should have start and end)
+      if (!rangeCfi.range) {
+        return Promise.reject(
+          new Error("CFI string is not a range: " + cfiRange)
+        );
+      }
+
+      // Find the view that contains this CFI range
+      const found = this.manager.visible().filter(function (view) {
+        return rangeCfi.spinePos === view.index;
+      });
+
+      if (!found.length) {
+        return Promise.reject(
+          new Error("No view found for CFI range: " + cfiRange)
+        );
+      }
+
+      const view = found[0];
+      if (!view.contents) {
+        return Promise.reject(new Error("View contents not available"));
+      }
+
+      // Verify the CFI range can be converted to a DOM range
+      const domRange = rangeCfi.toRange(
+        view.contents.document,
+        this.settings.ignoreClass
+      );
+
+      if (!domRange) {
+        return Promise.reject(
+          new Error("Could not convert CFI range to DOM range")
+        );
+      }
+
+      // Apply default yellow highlight styles if no custom styles provided
+      const defaultStyles = {
+        fill: "yellow",
+        "fill-opacity": "0.3",
+        "mix-blend-mode": "multiply",
+      };
+      const mergedStyles = Object.assign(defaultStyles, styles);
+
+      // Use the existing highlight method with the CFI range
+      const annotation = this.annotations.highlight(
+        cfiRange,
+        data,
+        cb || (() => {}),
+        className,
+        mergedStyles
+      );
+
+      // Return a resolved promise since highlight is synchronous
+      return Promise.resolve(annotation);
+    } catch (error) {
+      return Promise.reject(
+        new Error("Error highlighting range: " + error.message)
+      );
+    }
+  }
+
+  /**
    * Hook to adjust images to fit in columns
    * @param  {Contents} contents
    * @private
@@ -1206,7 +1291,7 @@ class Rendition {
 
   /**
    * Get the paragraphs from the currently viewed page (not the entire section/chapter)
-   * @returns {Array<{text: string, cfi: string}>|null} Array of paragraph objects containing text content and CFI, or null if no view is visible
+   * @returns {Array<{text: string, cfiRange: string}>|null} Array of paragraph objects containing text content and CFI range, or null if no view is visible
    */
   getCurrentViewParagraphs(options = {}) {
     const { minLength = 50 } = options;
@@ -1269,7 +1354,7 @@ class Rendition {
    * Get paragraphs from a range by extracting text and splitting it logically
    * @param {Range} range - The range that defines the visible area
    * @param {Contents} contents - The contents object for CFI generation
-   * @returns {Array<{text: string, cfi: string}>} Array of paragraph objects
+   * @returns {Array<{text: string, cfiRange: string}>} Array of paragraph objects
    * @private
    */
   _getParagraphsFromRange(range, contents) {
@@ -1314,21 +1399,38 @@ class Rendition {
         try {
           // Extract text from these specific text nodes
           let elementText = "";
+          let firstTextNode = null;
+          let lastTextNode = null;
+          let firstTextOffset = 0;
+          let lastTextOffset = 0;
 
           for (const textNode of textNodes) {
             const nodeText = textNode.textContent || "";
 
+            // Track first and last text nodes for range creation
+            if (!firstTextNode) {
+              firstTextNode = textNode;
+            }
+            lastTextNode = textNode;
+
             // If this is the start node, trim from the beginning
             if (textNode === range.startContainer) {
               elementText += nodeText.substring(range.startOffset);
+              firstTextOffset = range.startOffset;
             }
             // If this is the end node, trim from the end
             else if (textNode === range.endContainer) {
               elementText += nodeText.substring(0, range.endOffset);
+              lastTextOffset = range.endOffset;
             }
             // Otherwise, include the full text
             else {
               elementText += nodeText;
+              // For middle nodes, use full text offsets
+              if (!firstTextNode || firstTextNode === textNode) {
+                firstTextOffset = 0;
+              }
+              lastTextOffset = nodeText.length;
             }
           }
 
@@ -1337,16 +1439,28 @@ class Rendition {
           elementText = elementText.trim();
 
           // Skip empty paragraphs
-          if (!elementText) {
+          if (!elementText || !firstTextNode || !lastTextNode) {
             continue;
           }
 
-          // Generate CFI for this element
-          const cfi = contents.cfiFromNode(blockElement);
+          // Create a DOM Range for the paragraph's actual text content
+          const paragraphRange = document.createRange();
+
+          // Set start to the beginning of the first text node (accounting for trimming)
+          paragraphRange.setStart(firstTextNode, firstTextOffset);
+
+          // Set end to the end of the last text node (accounting for trimming)
+          paragraphRange.setEnd(lastTextNode, lastTextOffset);
+
+          // Generate CFI range for this paragraph
+          const cfiRange = contents.cfiFromRange(
+            paragraphRange,
+            this.settings.ignoreClass
+          );
 
           paragraphs.push({
             text: elementText,
-            cfi: cfi.toString(),
+            cfiRange: cfiRange.toString(),
           });
         } catch (e) {
           console.error("❌ Error processing block element:", e);

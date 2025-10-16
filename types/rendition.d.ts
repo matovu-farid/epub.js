@@ -97,12 +97,20 @@ export default class Rendition {
     endCfi: string;
   } | null;
 
-  getCurrentViewParagraphs(): Array<{ text: string; cfi: string }> | null;
+  getCurrentViewParagraphs(): Array<{ text: string; cfiRange: string }> | null;
 
   getRange(cfi: string, ignoreClass?: string): Range;
 
   highlightElement(
     cfi: string,
+    data?: object,
+    cb?: Function,
+    className?: string,
+    styles?: object
+  ): Promise<any>;
+
+  highlightRange(
+    cfiRange: string,
     data?: object,
     cb?: Function,
     className?: string,
