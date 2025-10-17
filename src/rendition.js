@@ -16,7 +16,24 @@ import IframeView from "./managers/views/iframe";
 // Default View Managers
 import DefaultViewManager from "./managers/default/index";
 import ContinuousViewManager from "./managers/continuous/index";
-
+/**
+ * @typedef {Object} View
+ * @property {number} index
+ * @property {Section} section
+ * @property {Contents} contents
+ */
+/**
+ * @typedef {Object} Section
+ * @property {number} index
+ * @property {number[]} pages
+ * @property {number} totalPages
+ * @property {EpubCFIPair} mapping
+ */
+/**
+ * @typedef {Object} EpubCFIPair
+ * @property {string} start
+ * @property {string} end
+ */
 /**
  * Displays an Epub as a series of Views for each Section.
  * Requires Manager and View class to handle specifics of rendering
@@ -1311,87 +1328,164 @@ class Rendition {
       return null;
     }
   }
+//   interface Paragraph {
+// 	text: string
+// 	startCfi: string
+// 	endCfi: string
+// 	cfiRange: string
+//   }
+/**
+ * Paragraph interface
+ * @typedef {Object} Paragraph
+ * @property {string} text - The text content of the paragraph
+ * @property {string} startCfi - The start CFI of the paragraph
+ * @property {string} endCfi - The end CFI of the paragraph
+ * @property {string} cfiRange - The CFI range of the paragraph
+ */
 
   /**
    * Get the paragraphs from the next view/page (not the currently visible one)
    * @returns {Promise<Array<{text: string, cfiRange: string}>|null>} Promise that resolves to array of paragraph objects containing text content and CFI range, or null if no next view exists
    */
-  async getNextViewParagraphs(options = {}) {
-    const { minLength = 50 } = options;
+  /**
+   * Get the paragraphs from the next view/page
+   * @param {Object} options - The options object
+   * @param {number} options.minLength - The minimum length of the paragraphs
+   * @returns {Promise<Array<{text: string, cfiRange: string}>|null>} Promise that resolves to array of paragraph objects containing text content and CFI range, or null if no next view exists
+   */
+  async getNextViewParagraphs(options = {minLength: 50}){
+    const { minLength = 50 } = options
     if (!this.manager) {
-      console.log("getNextViewParagraphs: No manager");
-      return [];
+      return []
     }
 
-    // Get the current location which includes the visible range
-    const location = this.manager.currentLocation();
+    const location = this.manager.currentLocation()
 
-    if (!location || !location.length || !location[0]) {
-      console.log("getNextViewParagraphs: No location data");
-      return [];
+    if (!location || !Array.isArray(location) || !location.length || !location[0]) {
+      return []
     }
 
-    const currentSection = location[0];
-    console.log("getNextViewParagraphs: Current section", {
-      index: currentSection.index,
-      pages: currentSection.pages,
-      totalPages: currentSection.totalPages,
-      hasMapping: !!currentSection.mapping,
-    });
-
+    const currentSection = location[0] 
     if (
       !currentSection.mapping ||
-      !currentSection.mapping.start ||
-      !currentSection.mapping.end
+      !(currentSection.mapping).start ||
+      !(currentSection.mapping ).end
     ) {
-      console.log("getNextViewParagraphs: No mapping data");
-      return [];
+      return []
     }
 
-    // Get the current view to access its section
     const currentView = this.manager.views.find({
-      index: currentSection.index,
-    });
+        index: currentSection.index
+      })
+    
 
-    if (!currentView || !currentView.section || !currentView.contents) {
-      console.log("getNextViewParagraphs: No current view or contents");
-      return [];
+    if (
+      !currentView ||
+      !(currentView).section ||
+      !(currentView).contents
+    ) {
+      return []
     }
 
-    // Check if there's a next page within the current section
     const hasNextPageInSection = this._hasNextPageInCurrentSection(
-      currentView,
+      currentView ,
       currentSection
-    );
-
-    console.log(
-      "getNextViewParagraphs: hasNextPageInSection =",
-      hasNextPageInSection
-    );
-
-    let paragraphs;
+    )
+	/**
+	 * Paragraphs array
+	 * @type {Paragraph[]}
+	 */
+    let paragraphs
     if (hasNextPageInSection) {
-      // Get paragraphs from the next page within the same section
-      paragraphs = this._getNextPageParagraphsInSection(
+      paragraphs = await this._getNextPageParagraphsInSectionAsync(
         currentView,
         currentSection
-      );
+      )
     } else {
-      // Get paragraphs from the first page of the next section
-      paragraphs = await this._getFirstPageParagraphsInNextSection(currentView);
+      const nextSectionParagraphs = await this._getFirstPageParagraphsInNextSection(
+        currentView
+      )
+      paragraphs = nextSectionParagraphs
     }
 
-    // Apply minLength filter if specified
     if (minLength > 0) {
-      paragraphs = paragraphs.filter((p) => p.text.length >= minLength);
-      console.log(
-        "getNextViewParagraphs: After minLength filter:",
-        paragraphs.length,
-        "paragraphs"
-      );
+      paragraphs = paragraphs.filter((p) => p.text.length >= minLength)
     }
 
-    return paragraphs;
+    return paragraphs
+  }
+
+   
+  /**
+   * 
+   * Get paragraphs from the next page within the current section
+   * @param {View} currentView - The current view
+   * @param {Section} currentSection - The current section location data
+   * @returns {Promise<Paragraph[]>} Promise that resolves to array of paragraph objects containing text content and CFI range, or null if no next page exists
+   */
+   async _getNextPageParagraphsInSectionAsync(
+    currentView,
+    currentSection
+  ){
+    try {
+      const layout = this.manager.layout
+      const currentPage = currentSection.pages[
+        currentSection.pages.length - 1
+      ]
+
+      const nextPageStart = currentPage * layout.pageWidth
+      const nextPageEnd = nextPageStart + layout.pageWidth
+
+      const nextPageMapping = (
+        (this.manager!.mapping as Record<string, unknown>).page as (
+          contents: Contents,
+          cfiBase: string,
+          start: number,
+          end: number
+        ) => Record<string, unknown>
+      )(
+        currentView.contents as Contents,
+        (currentView.section as Record<string, unknown>).cfiBase as string,
+        nextPageStart,
+        nextPageEnd
+      )
+
+      if (!nextPageMapping || !nextPageMapping.start || !nextPageMapping.end) {
+        return []
+      }
+
+      const startCfi = new EpubCFI(nextPageMapping.start as string)
+      const endCfi = new EpubCFI(nextPageMapping.end as string)
+
+      let startRange = startCfi.toRange((currentView.contents as Contents).document)
+      let endRange = endCfi.toRange((currentView.contents as Contents).document)
+
+      if (!startRange || !endRange) {
+        return []
+      }
+
+      try {
+        const comparison = startRange.compareBoundaryPoints(Range.START_TO_START, endRange)
+        if (comparison > 0) {
+          const temp = startRange
+          startRange = endRange
+          endRange = temp
+        }
+      } catch (e) {
+        console.error('Error comparing range boundaries:', e)
+      }
+
+      const range = (currentView.contents as Contents).document.createRange()
+      range.setStart(startRange.startContainer, startRange.startOffset)
+      range.setEnd(endRange.endContainer, endRange.endOffset)
+
+      const paragraphs = this._getParagraphsFromRange(range, currentView.contents as Contents)
+
+      return paragraphs
+    } catch (e) {
+      console.error('Error extracting next page paragraphs:', e)
+      return []
+    }
   }
 
   /**
@@ -1421,116 +1515,11 @@ class Rendition {
     return hasNext;
   }
 
-  /**
-   * Get paragraphs from the next page within the current section
-   * @param {View} currentView - The current view
-   * @param {Object} currentSection - The current section location data
-   * @returns {Array<{text: string, cfiRange: string}>|null} Array of paragraph objects
-   * @private
-   */
-  _getNextPageParagraphsInSection(currentView, currentSection) {
-    try {
-      const layout = this.manager.layout;
-      const currentPage = currentSection.pages[currentSection.pages.length - 1];
-
-      console.log(
-        "_getNextPageParagraphsInSection: currentPage =",
-        currentPage
-      );
-      console.log(
-        "_getNextPageParagraphsInSection: layout.pageWidth =",
-        layout.pageWidth
-      );
-
-      // Calculate next page offset based on page numbers
-      const nextPageStart = currentPage * layout.pageWidth;
-      const nextPageEnd = nextPageStart + layout.pageWidth;
-
-      console.log(
-        "_getNextPageParagraphsInSection: nextPageStart =",
-        nextPageStart
-      );
-      console.log(
-        "_getNextPageParagraphsInSection: nextPageEnd =",
-        nextPageEnd
-      );
-
-      // Get CFI mapping for next page
-      const nextPageMapping = this.manager.mapping.page(
-        currentView.contents,
-        currentView.section.cfiBase,
-        nextPageStart,
-        nextPageEnd
-      );
-
-      console.log(
-        "_getNextPageParagraphsInSection: nextPageMapping =",
-        nextPageMapping
-      );
-
-      if (!nextPageMapping || !nextPageMapping.start || !nextPageMapping.end) {
-        console.log("_getNextPageParagraphsInSection: No valid mapping");
-        return [];
-      }
-
-      // Convert CFIs to ranges and extract paragraphs
-      const startCfi = new EpubCFI(nextPageMapping.start);
-      const endCfi = new EpubCFI(nextPageMapping.end);
-
-      let startRange = startCfi.toRange(currentView.contents.document);
-      let endRange = endCfi.toRange(currentView.contents.document);
-
-      if (!startRange || !endRange) {
-        console.log(
-          "_getNextPageParagraphsInSection: Could not convert CFI to ranges"
-        );
-        return [];
-      }
-
-      // Validate and fix CFI order if needed
-      try {
-        const comparison = startRange.compareBoundaryPoints(
-          Range.START_TO_START,
-          endRange
-        );
-        if (comparison > 0) {
-          console.warn(
-            "_getNextPageParagraphsInSection: Start CFI comes after end CFI, swapping..."
-          );
-          // Swap the ranges
-          const temp = startRange;
-          startRange = endRange;
-          endRange = temp;
-        }
-      } catch (e) {
-        console.error("Error comparing range boundaries:", e);
-      }
-
-      const range = currentView.contents.document.createRange();
-      range.setStart(startRange.startContainer, startRange.startOffset);
-      range.setEnd(endRange.endContainer, endRange.endOffset);
-
-      const paragraphs = this._getParagraphsFromRange(
-        range,
-        currentView.contents
-      );
-      console.log(
-        "_getNextPageParagraphsInSection: Found",
-        paragraphs.length,
-        "paragraphs"
-      );
-
-      return paragraphs;
-    } catch (e) {
-      console.error("Error extracting next page paragraphs:", e);
-      return [];
-    }
-  }
 
   /**
    * Get paragraphs from the first page of the next section
    * @param {View} currentView - The current view
-   * @returns {Promise<Array<{text: string, cfiRange: string}>|null>} Promise that resolves to array of paragraph objects
+   * @returns {Promise<Paragraph[]>} Promise that resolves to array of paragraph objects
    * @private
    */
   async _getFirstPageParagraphsInNextSection(currentView) {
